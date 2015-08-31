@@ -6,6 +6,29 @@ import getopt
 import sys
 import os.path
 
+class Target:
+    def __init__(self, ensID, geneSym, transID, pct):
+        self.ensID   = ensID
+        self.geneSym = geneSym
+        self.transID = transID
+        self.pct     = float(pct) if pct != "NULL" else 0.0
+
+    def getPCT(self):
+        return self.pct
+
+    def getEnsID(self):
+        return self.ensID
+
+    def getGeneSym(self):
+        return self.geneSym
+
+    def getTransID(self):
+        return self.transID
+
+    def getMiRNA(self):
+        return self.miRNA
+
+
 def main():
     try:
         opts, args = getopt.getopt(sys.argv[1:], "hm:t:o:s:", ["help", "mFamily=", "targets=","output=", "speciesID="])
@@ -81,6 +104,7 @@ def correctIDs(familiesID):
 def run(mfamily, targetF, outputF, speciesid):
 
     # 1. We store in a dictionary all the mature miRNAs associated to each miRNA family
+    print "Analysing miRNA families file..."
     miR_family = {}
 
     family_file = open(mfamily, 'r')
@@ -99,11 +123,11 @@ def run(mfamily, targetF, outputF, speciesid):
                 miR_family[familyID].append(mat_mirna)
     family_file.close()
 
-    # 2. We check the targets in the target file and reporting as we are detecting them
-    myoutput    = open(outputF, 'w')
-    myoutput.write ("miRNA_family\tmature_miRNA\tensID\tGeneSymbol\ttransID\n")
+    # 2. We check the targets in the target file 
+    print "Analysing targets file..."
     target_file = open(targetF, 'r')
     target_file.next() # Skip the first line containing the header
+    mytargets = {} # miRNA_family -> [Target(), Target()]
     for line in target_file:
         line_s = line.split()
 
@@ -112,14 +136,37 @@ def run(mfamily, targetF, outputF, speciesid):
         geneSym    = line_s[2]
         transID    = line_s[3].split(".")[0]
         speciesID  = line_s[4]
+        pct        = line_s[10]
 
         if speciesID == speciesid:
             for familyID in familiesID:
                 if familyID in miR_family:
-                    for mat_mirna in miR_family[familyID]:
-                        myoutput.write(familyID + "\t" + mat_mirna + "\t" + ensID + "\t" + geneSym + "\t" + transID + "\n")
+                    if familyID not in mytargets:
+                        mytargets[familyID] = []
+                    found = False
+                    for mytarget in mytargets[familyID]:
+                        if transID == mytarget.getTransID():
+                            found = True
+                            break
+                    if found is False:
+                        mytargets[familyID].append(Target(ensID, geneSym, transID, pct))
 
     target_file.close()
+
+    # Get the top 20 targets for each miRNA
+    print "Reporting results..."
+    myoutput    = open(outputF, 'w')
+    myoutput.write ("miRNA_family\tmature_miRNA\tensID\tGeneSymbol\ttransID\tPCT\n")
+
+    for familyID in mytargets:
+        sorted_targets = sorted(mytargets[familyID], key = lambda tup:tup.getPCT(), reverse=True)
+        # If the pct value is 0, we won't be able to get the top 20, so I will get twice the number of possible targets (although random)
+        limit = 20 if sorted_targets[0].getPCT() > 0 else 40
+        for mytarget in sorted_targets[:limit]:
+            for mat_mirna in miR_family[familyID]:
+                myoutput.write(familyID + "\t" + mat_mirna + "\t" + mytarget.getEnsID() + "\t" + mytarget.getGeneSym() + "\t" + 
+                    mytarget.getTransID() + "\t" + str(mytarget.getPCT()) + "\n")
+
     myoutput.close()
 
 if __name__ == "__main__":
